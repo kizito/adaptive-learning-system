@@ -1,0 +1,522 @@
+* Microsoft Teams App Manifest (manifest.json)
+ * This defines the basic configuration for a Teams app
+ */
+const teamsAppManifest = {
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.12/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.12",
+  "version": "1.0.0",
+  "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", // Generate a UUID for your app
+  "packageName": "com.yourcompany.adaptivelearning",
+  "developer": {
+    "name": "Your Company",
+    "websiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  },
+  "name": {
+    "short": "Adaptive Learning",
+    "full": "Adaptive Learning Test App"
+  },
+  "description": {
+    "short": "Test app for adaptive learning concept",
+    "full": "A prototype app to test adaptive learning concepts in a classroom setting"
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#FFFFFF",
+  "staticTabs": [
+    {
+      "entityId": "concept-explainer",
+      "name": "Concept Help",
+      "contentUrl": "https://yourserver.com/concept-explainer",
+      "websiteUrl": "https://yourserver.com/concept-explainer",
+      "scopes": ["personal"]
+    },
+    {
+      "entityId": "practice-questions",
+      "name": "Practice",
+      "contentUrl": "https://yourserver.com/practice-questions",
+      "websiteUrl": "https://yourserver.com/practice-questions",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "yourserver.com"
+  ]
+};
+
+// ----------------- Frontend Components -----------------
+
+/**
+ * React component for the Concept Explainer tab
+ * This provides a chat interface for students to ask questions about course concepts
+ */
+import React, { useState, useEffect } from 'react';
+import * as microsoftTeams from "@microsoft/teams-js";
+import axios from 'axios';
+
+function ConceptExplainer() {
+  const [question, setQuestion] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [courseContext, setCourseContext] = useState({});
+  
+  useEffect(() => {
+    // Initialize Teams SDK
+    microsoftTeams.initialize();
+    
+    // Get course context (this would be set by teacher initially)
+    fetchCourseContext();
+  }, []);
+  
+  const fetchCourseContext = async () => {
+    // In a real app, this would fetch from your backend
+    // For testing, you can use mock data
+    setCourseContext({
+      courseName: "Introduction to Biology",
+      units: [
+        {
+          name: "Cell Structure",
+          key_concepts: ["cell membrane", "mitochondria", "nucleus", "golgi apparatus"]
+        },
+        {
+          name: "Photosynthesis",
+          key_concepts: ["chloroplasts", "light reactions", "calvin cycle"]
+        }
+      ]
+    });
+  };
+  
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+    
+    // Add user question to chat
+    const userMessage = { role: "user", content: question };
+    setMessages([...messages, userMessage]);
+    
+    // Clear input and show loading
+    setQuestion('');
+    setLoading(true);
+    
+    try {
+      // Call to AI service (this would be your backend API)
+      const response = await axios.post('/api/explain-concept', {
+        question,
+        courseContext
+      });
+      
+      // Add AI response to chat
+      const aiMessage = { role: "assistant", content: response.data.explanation };
+      setMessages(prevMessages => [...prevMessages, aiMessage]);
+      
+      // Log interaction for analytics
+      logInteraction("concept_question", {
+        question,
+        answer: response.data.explanation,
+        course: courseContext.courseName
+      });
+    } catch (error) {
+      console.error("Error getting explanation:", error);
+      const errorMessage = { 
+        role: "assistant", 
+        content: "Sorry, I couldn't process your question right now. Please try again later." 
+      };
+      setMessages(prevMessages => [...prevMessages, errorMessage]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const logInteraction = async (type, data) => {
+    // In a real app, this would send analytics to your backend
+    console.log("Interaction logged:", type, data);
+  };
+  
+  return (
+    <div className="concept-explainer">
+      <div className="header">
+        <h1>Ask about course concepts</h1>
+        <p>Get explanations about {courseContext.courseName} topics</p>
+      </div>
+      
+      <div className="chat-messages">
+        {messages.length === 0 ? (
+          <div className="empty-state">
+            <p>Ask a question about any concept from your course!</p>
+            <div className="suggestions">
+              <button onClick={() => setQuestion("What is a cell membrane?")}>
+                What is a cell membrane?
+              </button>
+              <button onClick={() => setQuestion("Explain photosynthesis")}>
+                Explain photosynthesis
+              </button>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg, index) => (
+            <div key={index} className={`message ${msg.role}`}>
+              {msg.content}
+            </div>
+          ))
+        )}
+        {loading && <div className="message loading">Thinking...</div>}
+      </div>
+      
+      <form onSubmit={handleSubmit} className="question-form">
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="Ask about a course concept..."
+          disabled={loading}
+        />
+        <button type="submit" disabled={loading || !question.trim()}>
+          Ask
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * React component for the Practice Questions tab
+ * This provides simple multiple-choice practice questions
+ */
+function PracticeQuestions() {
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [questions, setQuestions] = useState([]);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+  const [completed, setCompleted] = useState(false);
+  const [score, setScore] = useState(0);
+  const [courseContext, setCourseContext] = useState({});
+  
+  useEffect(() => {
+    // Initialize Teams SDK
+    microsoftTeams.initialize();
+    
+    // Get course context and load questions
+    fetchCourseContext().then(() => {
+      fetchQuestions();
+    });
+  }, []);
+  
+  const fetchCourseContext = async () => {
+    // Similar to ConceptExplainer component
+    setCourseContext({
+      courseName: "Introduction to Biology",
+      currentUnit: "Cell Structure"
+    });
+  };
+  
+  const fetchQuestions = async () => {
+    // In a real app, this would fetch from your backend based on the current unit
+    // For testing, use mock data
+    setQuestions([
+      {
+        id: 1,
+        text: "Which organelle is responsible for energy production in the cell?",
+        options: [
+          "Mitochondria", 
+          "Nucleus", 
+          "Golgi apparatus", 
+          "Cell membrane"
+        ],
+        correctAnswer: 0 // Index of correct option
+      },
+      {
+        id: 2,
+        text: "What is the primary function of the cell membrane?",
+        options: [
+          "Energy production", 
+          "Protein synthesis", 
+          "Control what enters and exits the cell", 
+          "Cell division"
+        ],
+        correctAnswer: 2
+      },
+      {
+        id: 3,
+        text: "Which structure contains the cell's genetic material?",
+        options: [
+          "Lysosome", 
+          "Nucleus", 
+          "Mitochondria", 
+          "Endoplasmic reticulum"
+        ],
+        correctAnswer: 1
+      }
+    ]);
+  };
+  
+  const handleAnswerSelect = (answerIndex) => {
+    setSelectedAnswer(answerIndex);
+  };
+  
+  const handleSubmit = () => {
+    const currentQ = questions[currentQuestion];
+    const isCorrect = selectedAnswer === currentQ.correctAnswer;
+    
+    // Update score
+    if (isCorrect) {
+      setScore(score + 1);
+    }
+    
+    // Show feedback
+    setFeedback({
+      isCorrect,
+      message: isCorrect 
+        ? "Correct! Well done." 
+        : `Incorrect. The right answer is: ${currentQ.options[currentQ.correctAnswer]}`
+    });
+    
+    // Log interaction for analytics
+    logInteraction("practice_answer", {
+      questionId: currentQ.id,
+      userAnswer: selectedAnswer,
+      correctAnswer: currentQ.correctAnswer,
+      isCorrect
+    });
+    
+    // Wait 2 seconds then advance to next question or show completion
+    setTimeout(() => {
+      if (currentQuestion < questions.length - 1) {
+        setCurrentQuestion(currentQuestion + 1);
+        setSelectedAnswer(null);
+        setFeedback(null);
+      } else {
+        setCompleted(true);
+      }
+    }, 2000);
+  };
+  
+  const logInteraction = async (type, data) => {
+    // Similar to ConceptExplainer component
+    console.log("Interaction logged:", type, data);
+  };
+  
+  const restartQuiz = () => {
+    setCurrentQuestion(0);
+    setSelectedAnswer(null);
+    setFeedback(null);
+    setCompleted(false);
+    setScore(0);
+  };
+  
+  if (questions.length === 0) {
+    return <div>Loading questions...</div>;
+  }
+  
+  if (completed) {
+    return (
+      <div className="practice-completion">
+        <h2>Practice Complete!</h2>
+        <p>You scored {score} out of {questions.length}</p>
+        <button onClick={restartQuiz}>Practice Again</button>
+      </div>
+    );
+  }
+  
+  const currentQ = questions[currentQuestion];
+  
+  return (
+    <div className="practice-questions">
+      <div className="header">
+        <h1>Practice Questions</h1>
+        <p>{courseContext.courseName}: {courseContext.currentUnit}</p>
+        <div className="progress">
+          Question {currentQuestion + 1} of {questions.length}
+        </div>
+      </div>
+      
+      <div className="question-container">
+        <h2>{currentQ.text}</h2>
+        
+        <div className="options">
+          {currentQ.options.map((option, index) => (
+            <div 
+              key={index} 
+              className={`option ${selectedAnswer === index ? 'selected' : ''}`}
+              onClick={() => handleAnswerSelect(index)}
+            >
+              {option}
+            </div>
+          ))}
+        </div>
+        
+        {feedback && (
+          <div className={`feedback ${feedback.isCorrect ? 'correct' : 'incorrect'}`}>
+            {feedback.message}
+          </div>
+        )}
+        
+        <button 
+          onClick={handleSubmit} 
+          disabled={selectedAnswer === null || feedback !== null}
+          className="submit-button"
+        >
+          Submit Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------- Backend API -----------------
+
+/**
+ * Express.js backend for handling API requests
+ */
+const express = require('express');
+const { OpenAI } = require('openai');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+// Endpoint for concept explanations
+app.post('/api/explain-concept', async (req, res) => {
+  try {
+    const { question, courseContext } = req.body;
+    
+    // Create context from course materials
+    const contextPrompt = `
+      You are an AI tutor for the course "${courseContext.courseName}".
+      
+      Key concepts in this course include:
+      ${courseContext.units.map(unit => `
+        - ${unit.name}: ${unit.key_concepts.join(', ')}
+      `).join('\n')}
+      
+      Provide a clear, concise explanation of the concept. Use simple language
+      appropriate for students. Focus only on explaining the concept, not on
+      completing assignments for the student.
+    `;
+    
+    // Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: contextPrompt
+        },
+        {
+          role: "user",
+          content: question
+        }
+      ],
+      max_tokens: 500
+    });
+    
+    // Return explanation
+    res.json({
+      explanation: completion.choices[0].message.content
+    });
+  } catch (error) {
+    console.error("Error explaining concept:", error);
+    res.status(500).json({ error: "Failed to generate explanation" });
+  }
+});
+
+// Endpoint for saving analytics
+app.post('/api/log-interaction', (req, res) => {
+  const { type, data } = req.body;
+  
+  // In a real app, this would save to a database
+  console.log("Interaction logged:", type, data);
+  
+  res.json({ success: true });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// ----------------- Usage Analytics -----------------
+
+/**
+ * Simple analytics module for tracking usage
+ * In a real app, this would be more sophisticated and store data in a database
+ */
+class AnalyticsTracker {
+  constructor() {
+    this.interactions = [];
+  }
+  
+  logInteraction(userId, type, data) {
+    const interaction = {
+      userId,
+      type,
+      data,
+      timestamp: new Date().toISOString()
+    };
+    
+    this.interactions.push(interaction);
+    
+    // In a real app, this would send to a database
+    console.log("Interaction logged:", interaction);
+    
+    return interaction;
+  }
+  
+  getInteractionsByUser(userId) {
+    return this.interactions.filter(i => i.userId === userId);
+  }
+  
+  getInteractionsByType(type) {
+    return this.interactions.filter(i => i.type === type);
+  }
+  
+  getSummaryStats() {
+    const conceptQuestions = this.getInteractionsByType("concept_question").length;
+    const practiceAnswers = this.getInteractionsByType("practice_answer");
+    const correctAnswers = practiceAnswers.filter(i => i.data.isCorrect).length;
+    
+    return {
+      totalConceptQuestions: conceptQuestions,
+      totalPracticeAnswers: practiceAnswers.length,
+      correctAnswersRate: practiceAnswers.length > 0 
+        ? correctAnswers / practiceAnswers.length 
+        : 0
+    };
+  }
+}
+
+// Export analytics tracker for use in other modules
+const analyticsTracker = new AnalyticsTracker();
+module.exports = { analyticsTracker };
+
+// ----------------- Deployment Instructions -----------------
+
+/*
+To deploy this test app:
+
+1. Set up a simple Node.js server with Express
+2. Implement the frontend components using React
+3. Configure the Microsoft Teams app manifest
+4. Register your app in the Microsoft Developer Portal
+5. Set up OpenAI API access for the concept explainer
+6. Deploy to a hosting service (e.g., Azure App Service, Heroku)
+7. Install the app in Microsoft Teams for testing
+
+For a quick classroom test, you can:
+- Use mock data instead of a full database
+- Simplify authentication using Microsoft Teams identity
+- Focus on core features and worry about scalability later
+*/
